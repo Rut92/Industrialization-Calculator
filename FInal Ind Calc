@@ -87,9 +87,16 @@ overlap_color = "rgba(0,200,0,0.4)" if overlap_days >= ideal_overlap_days else "
 
 df_segments = [
     {"Task": "S1 Coverage", "Start": earliest_date, "Finish": EDS1, "Segment": "S1", "Hover": ""},
+    
+    # Thin S2 track (behind milestones)
+    {"Task": "S2 Track", "Start": fai_release, "Finish": prod_delivery, "Segment": "S2 Track", "Hover": ""},
+    
+    # Individual S2 milestones
     {"Task": "FAI", "Start": fai_release, "Finish": fai_delivery, "Segment": "FAI", "Hover": ""},
     {"Task": "Fit Check", "Start": fai_delivery, "Finish": fit_check_end, "Segment": "Fit Check", "Hover": ""},
     {"Task": "Production", "Start": prod_release, "Finish": prod_delivery, "Segment": "Production", "Hover": ""},
+    
+    # Overlap
     {"Task": "Overlap", "Start": SDS2, "Finish": EDS1, "Segment": "Overlap",
      "Hover": f"Actual: {overlap_days} days; Missing: {short_by} days" if short_by > 0 else f"Actual: {overlap_days} days"}
 ]
@@ -98,6 +105,7 @@ df = pd.DataFrame(df_segments)
 
 colors = {
     "S1": "#87CEFA",
+    "S2 Track": "rgba(200,200,200,0.2)",  # thinner, lighter track
     "FAI": "#32CD32",
     "Fit Check": "#ADFF2F",
     "Production": "#90EE90",
@@ -126,7 +134,7 @@ fig.add_annotation(
 )
 
 fig.update_layout(
-    title="🗓️ S1 & S2 Timeline with Steps, Overlap, and Safe Supply",
+    title="🗓️ S1 & S2 Timeline with Thin S2 Track, Milestones, Overlap, and Safe Supply",
     xaxis_title="Date",
     xaxis=dict(rangeslider=dict(visible=True), type="date",
                range=[earliest_date - timedelta(days=5), latest_date + timedelta(days=5)]),
@@ -134,3 +142,4 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
