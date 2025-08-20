@@ -1,0 +1,144 @@
+import streamlit as st
+from datetime import datetime, timedelta
+import pandas as pd
+import plotly.express as px
+
+st.set_page_config(page_title="📊 Industrial Calculator", layout="wide")
+
+# ------------------ Inputs ------------------ #
+col1, col2 = st.columns(2)
+with col1:
+    st.header("🔧 Input Data")
+    today = datetime.today()
+
+    EDS1 = datetime.combine(
+        st.date_input("EDS1: Coverage end date for open POs for S1", value=today.date()),
+        datetime.min.time()
+    )
+    SDS2 = datetime.combine(
+        st.date_input("SDS2: Coverage start date for production POs for S2", value=today.date()),
+        datetime.min.time()
+    )
+
+    LTS1 = st.number_input("LTS1: S1 Production Lead Time (days)", min_value=0, value=30)
+    LTS2 = st.number_input("LTS2: S2 Production Lead Time (days)", min_value=0, value=20)
+    FLTS2 = st.number_input("FLTS2: S2 FAI Lead Time (days)", min_value=0, value=10)
+    LTFC = st.number_input("LTFC: Fit Check Lead Time (days)", min_value=0, value=5)
+
+    st.markdown("### Overlap Ideal Calculation")
+    lead_time_option = st.selectbox(
+        "Lead Time (months)", ["1-3 Months", "4-6 Months", "7-9 Months", "10-12 Months"]
+    )
+    complexity_option = st.selectbox(
+        "Complexity Quotient", ["I – Sheet Metal Parts",
+                                "II – Small Machined Parts",
+                                "III – Machined Parts with Minimum Processing",
+                                "IV – Machined Parts with Multiple BAPS Approval Requirement"]
+    )
+
+today_dt = datetime.combine(today.date(), datetime.min.time())
+
+# ------------------ Overlap Calculations ------------------ #
+ideal_overlap_table_days = {
+    1: {"1-3 Months": 3*30, "4-6 Months": 4*30, "7-9 Months": 5*30, "10-12 Months": 6*30},
+    2: {"1-3 Months": 4*30, "4-6 Months": 4*30, "7-9 Months": 5*30, "10-12 Months": 6*30},
+    3: {"1-3 Months": 5*30, "4-6 Months": 5*30, "7-9 Months": 5*30, "10-12 Months": 6*30},
+    4: {"1-3 Months": 6*30, "4-6 Months": 6*30, "7-9 Months": 6*30, "10-12 Months": 6*30},
+}
+complexity_map = {
+    "I – Sheet Metal Parts": 1,
+    "II – Small Machined Parts": 2,
+    "III – Machined Parts with Minimum Processing": 3,
+    "IV – Machined Parts with Multiple BAPS Approval Requirement": 4
+}
+complexity_idx = complexity_map[complexity_option]
+ideal_overlap_days = ideal_overlap_table_days[complexity_idx][lead_time_option]
+
+overlap_days = (EDS1 - SDS2).days
+short_by = max(ideal_overlap_days - overlap_days, 0)
+
+# ------------------ Milestones ------------------ #
+fai_release = EDS1 - timedelta(days=(overlap_days + LTS2 + LTFC + FLTS2))
+fai_delivery = fai_release + timedelta(days=FLTS2)
+fit_check_end = fai_delivery + timedelta(days=LTFC)
+prod_release = fit_check_end
+prod_delivery = prod_release + timedelta(days=LTS2)
+safe_supply = EDS1 - timedelta(days=LTS1)
+
+earliest_date = min(today_dt, fai_release, SDS2)
+latest_date = max(EDS1, prod_delivery)
+
+# ------------------ Results ------------------ #
+col2.header("📑 Calculated Results")
+col2.markdown(f"**Actual Overlap (days):** {overlap_days}")
+col2.markdown(f"**Ideal Overlap (days):** {ideal_overlap_days}")
+if short_by > 0:
+    col2.warning(f"⚠️ Overlap is short by {short_by} days!")
+
+col2.markdown(f"**FAI PO release date, S2:** {fai_release:%m-%d-%Y}")
+col2.markdown(f"**FAI PO delivery date, S2:** {fai_delivery:%m-%d-%Y}")
+col2.markdown(f"**Fit Check completion date:** {fit_check_end:%m-%d-%Y}")
+col2.markdown(f"**Production PO release date, S2:** {prod_release:%m-%d-%Y}")
+col2.markdown(f"**Production PO delivery date, S2:** {prod_delivery:%m-%d-%Y}")
+col2.markdown(f"**Safe Supply Assurance Date:** {safe_supply:%m-%d-%Y}")
+
+# ------------------ Gantt Chart ------------------ #
+overlap_color = "rgba(0,200,0,0.4)" if overlap_days >= ideal_overlap_days else "rgba(255,0,0,0.4)"
+
+df_segments = [
+    {"Task": "S1 Coverage", "Start": earliest_date, "Finish": EDS1, "Segment": "S1", "Hover": ""},
+    
+    # Thin S2 track (behind milestones)
+    {"Task": "S2 Track", "Start": fai_release, "Finish": prod_delivery, "Segment": "S2 Track", "Hover": ""},
+    
+    # Individual S2 milestones
+    {"Task": "FAI", "Start": fai_release, "Finish": fai_delivery, "Segment": "FAI", "Hover": ""},
+    {"Task": "Fit Check", "Start": fai_delivery, "Finish": fit_check_end, "Segment": "Fit Check", "Hover": ""},
+    {"Task": "Production", "Start": prod_release, "Finish": prod_delivery, "Segment": "Production", "Hover": ""},
+    
+    # Overlap
+    {"Task": "Overlap", "Start": SDS2, "Finish": EDS1, "Segment": "Overlap",
+     "Hover": f"Actual: {overlap_days} days; Missing: {short_by} days" if short_by > 0 else f"Actual: {overlap_days} days"}
+]
+
+df = pd.DataFrame(df_segments)
+
+colors = {
+    "S1": "#87CEFA",
+    "S2 Track": "rgba(200,200,200,0.2)",  # thinner, lighter track
+    "FAI": "#32CD32",
+    "Fit Check": "#ADFF2F",
+    "Production": "#90EE90",
+    "Overlap": overlap_color
+}
+
+fig = px.timeline(df, x_start="Start", x_end="Finish", y="Task",
+                  color="Segment", color_discrete_map=colors,
+                  text="Segment", hover_name="Hover")
+
+fig.update_yaxes(autorange="reversed")
+
+# Safe Supply line
+fig.add_shape(
+    type="line",
+    x0=safe_supply, x1=safe_supply,
+    y0=-0.5, y1=len(df["Task"])-0.5,
+    line=dict(color="gold", width=4, dash="dash")
+)
+fig.add_annotation(
+    x=safe_supply, y=len(df["Task"])-0.5,
+    text="Safe Supply",
+    showarrow=True,
+    arrowhead=2,
+    arrowcolor="gold"
+)
+
+fig.update_layout(
+    title="🗓️ S1 & S2 Timeline with Thin S2 Track, Milestones, Overlap, and Safe Supply",
+    xaxis_title="Date",
+    xaxis=dict(rangeslider=dict(visible=True), type="date",
+               range=[earliest_date - timedelta(days=5), latest_date + timedelta(days=5)]),
+    height=600
+)
+
+st.plotly_chart(fig, use_container_width=True)
