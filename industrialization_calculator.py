@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 
 st.set_page_config(page_title="📊 Industrial Calculator", layout="wide")
+st.title("Industrialization Calculator")  # Added title
 
 # ------------------ Inputs ------------------ #
 col1, col2 = st.columns(2)
